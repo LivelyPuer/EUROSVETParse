@@ -13,16 +13,26 @@ from lxml.etree import ParserError
 import csv
 
 properties = ['Наименование', "Код товара", "Артикул", "Серия", "Торговая марка", "Цена", "URL адрес", "Фото товара",
-              "Вес"]
+              "Вес", "Размеры"]
 # TODO  артикул: {свойство: характеристика}
 products = {}
 CATEGORY = "Категория: "
 FORMAT = '%(asctime)-15s %(message)s'
-START_TIME = dt.datetime.now().strftime("%H.%M.%f(%d.%m.%Y)")
+START_TIME = dt.datetime.now().strftime("%d.%m.%Y(%H.%M.%f)")
 PROPERTY = "Свойство: "
 logging.basicConfig(filename=f'logs/{START_TIME}.log', filemode='w', level=logging.DEBUG,
                     format=FORMAT)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+
+
+def delta_start_now_time():
+    return str(time.time() - start_time_perser)
+
+
+def check_dimensions(dimensions_dict: dict):
+    if len(dimensions_dict.keys()) == 3:
+        return f'{dimensions_dict["Ширина"]}x{dimensions_dict["Высота"]}x{dimensions_dict["Длина"]}'
+    return None
 
 
 async def get_product(url: str):
@@ -62,15 +72,32 @@ async def get_product(url: str):
 
         i = 0
         now_pr = ''
+        dimensions = {}
         for property_product in html_dom.xpath('//table[@class="table table-condensed"]//tr/td/text()'):
             pr_items = property_product.strip()
             if pr_items == "Вес":
                 now_pr = "Вес"
+            elif pr_items in ["Длина", "Ширина", "Высота"] and pr_items not in dimensions.keys():
+                dimensions[pr_items] = ""
+                now_pr = pr_items
+                i += 1
+                continue
+            elif now_pr in ["Длина", "Ширина", "Высота"]:
+                dimensions[now_pr] = pr_items.split('мм')[0].strip()
+                out = check_dimensions(dimensions)
+                if out is not None:
+                    products[url_name]["Размеры"] = out
+                i += 1
+                now_pr = ""
+                continue
             elif i % 2 == 0:
                 if PROPERTY + pr_items not in properties:
                     properties.append(PROPERTY + pr_items)
                 now_pr = PROPERTY + pr_items
             else:
+                if now_pr in products[url_name].keys():
+                    i += 1
+                    continue
                 if now_pr == "Вес":
                     products[url_name][now_pr] = pr_items.split("кг")[0].strip()
                 else:
@@ -84,7 +111,9 @@ async def get_product(url: str):
     if now_category not in properties:
         properties.append(now_category)
     products[url_name][now_category] = ' >> '.join(
-        [a.strip() for a in html_dom.xpath('//ol[@class="breadcrumb"]/li[position() > 1]/text()')])
+        [a.strip() for a in html_dom.xpath('//ol[@class="breadcrumb"]/li[position() > 1]/a/text()')])
+    logging.info("Dimensions: " + products[url_name]["Размеры"])
+    logging.info("Time spent: " + delta_start_now_time())
     logging.info("End product: " + url)
 
 
@@ -100,9 +129,11 @@ def get_catalog(url, products: list):
             logging.error(e)
             logging.error(traceback.format_exc())
 
+    logging.info("Time spent: " + delta_start_now_time())
     logging.info("End catalog: " + url)
 
 
+start_time_perser = time.time()
 chrome_options = Options()
 chrome_options.add_argument('--headless')
 driver = webdriver.Chrome(options=chrome_options)
@@ -117,12 +148,16 @@ for catalog in catalogs:
     driver.find_element_by_xpath('//div[@class="pull-right mr15-xs"]//button').click()
     driver.find_element_by_xpath(
         '//div[@class="pull-right mr15-xs"]//li/a[@data-catalog-navigation-item="3000"]').click()
-    time.sleep(5)
+    while True:
+        try:
+            time.sleep(10)
+            products_by = driver.find_elements_by_xpath('//a[@class="product-item-link relative"]')
+            get_catalog(driver.current_url, products_by)
+            break
+        except:
+            time.sleep(10)
 
-
-
-
-
+logging.info("All catalogs was parsed: " + delta_start_now_time())
 logging.info(f"Start write to csv/{START_TIME}.csv")
 with open(f'csv/{START_TIME}.csv', 'w', encoding='utf-8', newline="") as csvfile:
     writer = csv.DictWriter(csvfile, fieldnames=properties, delimiter=";")
@@ -131,3 +166,4 @@ with open(f'csv/{START_TIME}.csv', 'w', encoding='utf-8', newline="") as csvfile
         del value["count"]
         writer.writerow(value)
     csvfile.close()
+logging.info("Successful! " + f"Time spent: {delta_start_now_time()}")
