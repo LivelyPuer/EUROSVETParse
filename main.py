@@ -15,9 +15,10 @@ import csv
 
 properties = ['Наименование', "Код товара", "Артикул", "Свойство: Серия", "Свойство: Бренд", "Цена", "URL адрес",
               "Фото товара",
-              "Вес", "Размеры", "Категория: 1", "Краткое описание", "Описание", "Свойство: Помещение",
+              "Вес в кг", "Размеры в мм", "Категория: 1", "Краткое описание", "Описание", "Свойство: Помещение",
               "Свойство: Рекомендуемая площадь освещения", "Количество", "Свойство: Тип светильника",
-              "Свойство: Стили и тенденции", "Свойство: Торговые марки"]
+              "Свойство: Стили и тенденции", "Свойство: Торговые марки",
+              "Видео"]
 need_properties = ["Вес", "Рекомендуемая площадь освещения", "Помещение", "Длина", "Ширина", "Высота"]
 properties_w_pr = ["Рекомендуемая площадь освещения", "Помещение"]
 # TODO  артикул: {свойство: характеристика}
@@ -44,7 +45,7 @@ def tuple_parse(tuples: lambda x: list(tuple(x))) -> dict:
             if t_key in properties_w_pr:
                 d_out[PROPERTY + t_key] = t_value if "м кв." not in t_value else t_value.split("м кв.")[0].strip()
             elif t_key == "Вес":
-                d_out[t_key + "в кг"] = float(t_value.split("кг")[0].strip())
+                d_out[t_key + " в кг"] = float(t_value.split("кг")[0].strip())
             else:
                 tmp[t_key] = t_value.split('мм')[0].strip()
                 out = check_dimensions(tmp)
@@ -107,7 +108,11 @@ def get_product(url: str, catalog_name_l: str, type_catalog: str):
             photos = '; '.join(list(map(lambda x: "https:" + x, html_dom.xpath(
                 '//a[contains(@class,"main-photo-link")][not(contains(@href, ".svg"))]/@href'))))
             products[url_name]["Фото товара"] = photos
-
+            try:
+                video = "https:" + html_dom.xpath("//a//video//source/@src")[0]
+                products[url_name]["Видео"] = video
+            except:
+                pass
             logging.debug(photos)
             i = 0
             table_properties = []
